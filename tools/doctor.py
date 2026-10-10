@@ -130,6 +130,12 @@ def search_checks(root: Path, checks: list[dict]) -> None:
     skills = root / ".agents/skills"
     enabled = 0
     for skill in sorted(skills.glob("*/SKILL.md")):
+        # Agent Skills also contains workflow routers. A CLI sibling identifies
+        # a portal candidate; keep incomplete CLIs in the checks so damage is
+        # reported rather than silently hiding the portal from discovery.
+        cli = skill.parent / "cli"
+        if not cli.exists():
+            continue
         relative = skill.relative_to(root)
         text = read_local(root, relative, checks)
         if text is None:
@@ -143,7 +149,6 @@ def search_checks(root: Path, checks: list[dict]) -> None:
         if not active:
             continue
         enabled += 1
-        cli = skill.parent / "cli"
         manifest = read_local(root, (cli / "package.json").relative_to(root), checks)
         if manifest is None:
             continue

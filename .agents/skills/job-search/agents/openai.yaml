@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Job Search"
+  short_description: "Run this project's job application workflows"
+  default_prompt: "Use $job-search to help with my job search in this project."

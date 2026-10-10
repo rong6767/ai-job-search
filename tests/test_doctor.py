@@ -129,6 +129,29 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(report["ready"], report)
         self.assertNotIn("portal:local-search", [c["name"] for c in report["checks"]])
 
+    def test_workflow_skills_are_not_portal_candidates(self):
+        self.write(".agents/skills/job-search/SKILL.md", "---\nname: job-search\n"
+                   "description: Run canonical workflows\n---\n")
+        report = doctor.diagnose(self.root, "search")
+        self.assertTrue(report["ready"], report)
+        self.assertFalse(any("job-search" in c["name"] for c in report["checks"]))
+
+    def test_workflow_skill_does_not_count_as_an_enabled_portal(self):
+        self.write(".agents/skills/job-search/SKILL.md", "---\nname: job-search\n---\n")
+        self.portal("global-search", enabled=False)
+        report = doctor.diagnose(self.root, "search")
+        self.assertEqual(next(c for c in report["checks"] if c["name"] == "portals")["status"], "warning")
+
+    def test_incomplete_portal_cli_is_reported(self):
+        (self.root / ".agents/skills/global-search/cli/package.json").unlink()
+        report = doctor.diagnose(self.root, "search")
+        self.assertIn(".agents/skills/global-search/cli/package.json", self.errors(report))
+
+    def test_future_portals_do_not_require_a_search_name_suffix(self):
+        self.portal("new-board")
+        report = doctor.diagnose(self.root, "search")
+        self.assertEqual(next(c for c in report["checks"] if c["name"] == "portal:new-board")["status"], "ok")
+
     def test_enabled_portal_reports_missing_scoped_runtime_dependency(self):
         prefix = self.portal("local-search", deps={"@scope/parser": "1.0"})
         report = doctor.diagnose(self.root, "search")
@@ -206,6 +229,17 @@ class DoctorTests(unittest.TestCase):
                                "--scope", "profile", "--format", "json"], capture_output=True)
         self.assertEqual(proc.returncode, 1)
         self.assertFalse(json.loads(proc.stdout)["ready"])
+
+    def test_real_cli_search_ignores_workflow_router_without_a_cli(self):
+        self.write(".agents/skills/job-search/SKILL.md", "---\nname: job-search\n"
+                   "description: Codex workflow router\n---\n")
+        proc = subprocess.run([sys.executable, str(Path(doctor.__file__).resolve()),
+                               "--root", str(self.root), "--scope", "search", "--format", "json"],
+                              cwd=self.root, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
+        report = json.loads(proc.stdout)
+        self.assertTrue(report["ready"], report)
+        self.assertFalse(any("job-search" in c["name"] for c in report["checks"]))
 
 
 if __name__ == "__main__":

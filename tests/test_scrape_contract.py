@@ -23,10 +23,19 @@ excluded: the contract is about the search output /scrape consumes.
 import re
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRAPER_SKILL = REPO_ROOT / ".claude" / "skills" / "job-scraper" / "SKILL.md"
-PORTAL_CLIS = sorted((REPO_ROOT / ".agents" / "skills").glob("*-search"))
+
+
+def discover_portal_clis(skills_root: Path) -> list[Path]:
+    """Mirror Step 1b: workflows have no CLI; incomplete portals still fail."""
+    return sorted(skill.parent for skill in skills_root.glob("*/SKILL.md")
+                  if (skill.parent / "cli").exists())
+
+
+PORTAL_CLIS = discover_portal_clis(REPO_ROOT / ".agents" / "skills")
 
 # Derived, never copied: a hardcoded field list drifts in lockstep with
 # nothing - if Step 2's prose drops or adds a field, the known-good portals
@@ -60,6 +69,7 @@ class ScrapeSearchOutputContractTests(unittest.TestCase):
 
     def test_every_portal_cli_emits_the_step2_contract_fields(self):
         contract = derive_contract_fields()
+        self.assertTrue(PORTAL_CLIS, "no portal CLIs checked")
         failures: list[str] = []
         for portal in PORTAL_CLIS:
             search_ts = portal / "cli" / "src" / "commands" / "search.ts"
@@ -72,6 +82,17 @@ class ScrapeSearchOutputContractTests(unittest.TestCase):
             if missing:
                 failures.append(f"{portal.name}: missing {missing} in search output")
         self.assertEqual([], failures, "; ".join(failures) or "no portal CLIs checked")
+
+    def test_portal_discovery_excludes_workflows_and_includes_new_cli_names(self):
+        with TemporaryDirectory() as temporary:
+            skills = Path(temporary)
+            for name in ("job-search", "new-board"):
+                (skills / name).mkdir()
+                (skills / name / "SKILL.md").write_text("---\nname: " + name + "\n---\n", encoding="utf-8")
+            # An incomplete portal stays visible so the contract check reports
+            # its missing search.ts instead of treating it as a workflow.
+            (skills / "new-board" / "cli").mkdir()
+            self.assertEqual([skills / "new-board"], discover_portal_clis(skills))
 
 
 

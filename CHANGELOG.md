@@ -15,6 +15,12 @@ per-file diff commands.
 
 ### Added
 
+- **Direct Codex support** - a native `$job-search` router in
+  `.agents/skills/job-search/` and runtime bindings in `AGENTS.md` reuse the
+  canonical `.claude/` workflows without copying the candidate profile or
+  methodology. Desktop and CLI setup instructions cover onboarding, search,
+  ranking, and applications; Gmail/Notion sync requires connected tools.
+
 - **Offline readiness checks** (`tools/doctor.py`) - scoped diagnostics for setup,
   profiles, search, and applications, with actionable fixes and JSON output. The
   canonical workflows check prerequisites before fetching or scoring. Optional

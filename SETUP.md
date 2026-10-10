@@ -4,7 +4,15 @@ Step-by-step instructions for getting the AI Job Search framework running.
 
 ## 1. Prerequisites
 
-### Claude Code
+Choose Codex or Claude Code. Python, Bun, and document-tool requirements below apply to both.
+
+### Codex (desktop or CLI)
+
+Install and sign in to Codex using the [official setup documentation](https://learn.chatgpt.com/docs/cli). In the desktop app, open the cloned repository as a local project and start a new chat. For the CLI, start `codex --search` from the repository root so web research is available.
+
+This repository ships a native `$job-search` skill in `.agents/skills/job-search/`; no Claude Code installation or Anthropic subscription is required. It reuses the canonical workflows and profiles in `.claude/` and `CLAUDE.md`. See [OpenAI's skills documentation](https://learn.chatgpt.com/docs/build-skills) for local skill discovery.
+
+### Claude Code (alternative)
 
 Install Claude Code (Anthropic's CLI for Claude):
 
@@ -153,15 +161,17 @@ The default extractor is **pypdf** (BSD, `pip install pypdf`). Poppler `pdftotex
 
 If a command still uses `pdftotext -layout`, it must pass `-enc UTF-8` as well. If **neither** extractor is available, `/apply` skips the mechanical check with a warning and falls back to a visual keyword review — everything else works normally.
 
+**Codex PDF inspection:** The application workflow also requires visual inspection of every rendered page. If your Codex host has no PDF rendering tool, install Poppler using the commands above and verify `pdftoppm -v`. Codex can then render pages as PNGs and inspect them. `pypdf` cannot replace this step; without rendering, the application remains visually unverified.
+
 ## 2. Fork and clone
 
 ```bash
-gh repo fork MadsLorentzen/ai-job-search --clone
+gh repo fork rong6767/ai-job-search --clone
 cd ai-job-search
 gh repo set-default <your-github-username>/ai-job-search
 ```
 
-Or manually: fork on GitHub, then clone your fork.
+Or manually: fork [this Codex-enabled repository](https://github.com/rong6767/ai-job-search) on GitHub, then clone your fork. The original framework is maintained at [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search).
 
 > **The `set-default` line is not optional.** `gh repo fork --clone` sets the
 > **upstream** repo as gh's default repository ("The `upstream` remote will be set as
@@ -206,6 +216,26 @@ If you're outside Denmark, you can generate an equivalent search skill for your 
 
 ## 4. Run the setup interview
 
+### Codex
+
+Open this repository as a local project in the desktop app and start a new chat, or launch the CLI from its root:
+
+```bash
+codex --search
+```
+
+Then send:
+
+```text
+$job-search setup
+```
+
+You can also use natural language, such as "Help me set up my job-search profile from my CV." If the skill is missing after a repository update, restart Codex. To search and score postings once setup is complete, send `$job-search scrape`, then `$job-search rank` as separate prompts.
+
+The examples elsewhere in this guide use Claude Code's slash-command notation. In Codex, use `$job-search <operation>` with the same arguments; for example, `/setup --section search` becomes `$job-search setup --section search`. These are skill prompts, not registered Claude-style slash commands. Gmail/Notion synchronization operations require their respective connected tools.
+
+### Claude Code
+
 Start Claude Code in the repository:
 
 ```bash
@@ -218,15 +248,17 @@ Then run the onboarding:
 /setup
 ```
 
-Claude will offer three paths:
+### Shared onboarding
 
-- **Path A (documents folder):** Add your CV, LinkedIn export, diplomas, references, or past applications under `documents/`. Claude reads and cross-references them before proposing profile updates. This is best when you have several source files.
-- **Path B (single CV import):** Share one CV/resume by mentioning the file with `@` or pasting the text. Claude extracts it and asks follow-up questions for anything missing.
+Your agent will offer three paths:
+
+- **Path A (documents folder):** Add your CV, LinkedIn export, diplomas, references, or past applications under `documents/`. The agent reads and cross-references them before proposing profile updates. This is best when you have several source files.
+- **Path B (single CV import):** Share one CV/resume by mentioning the file with `@` or pasting the text. The agent extracts it and asks follow-up questions for anything missing.
 - **Path C (interview mode):** Answer structured interview questions section by section.
 
 All three paths produce the same result: fully populated profile files.
 
-If you use another agent, start with `AGENTS.md`, then ask it to read and follow `.claude/commands/setup.md`. The canonical command files describe the workflow; other agents may need their own equivalents for Claude's tool names and slash-command registration. For search, use `.claude/skills/job-scraper/SKILL.md`.
+If you use an agent other than Codex or Claude Code, start with `AGENTS.md`, then ask it to read and follow `.claude/commands/setup.md`. The canonical command files describe the workflow; other agents may need their own equivalents for Claude's tool names and slash-command registration. For search, use `.claude/skills/job-scraper/SKILL.md`.
 
 ### Local readiness check
 
@@ -288,7 +320,15 @@ This creates `salary_data.json` which the `/apply` workflow uses for salary benc
 
 ## 6. Test the workflow
 
-Find a job posting you're interested in, then:
+Find a job posting you're interested in. In Codex, send:
+
+```text
+$job-search apply https://jobindex.dk/job/1234567
+```
+
+Or send `$job-search apply` followed by the full posting text.
+
+In Claude Code:
 
 ```
 /apply https://jobindex.dk/job/1234567
@@ -300,12 +340,15 @@ Or paste the job description directly:
 /apply [paste job posting text here]
 ```
 
-Claude will:
+Your agent will:
+
 1. Evaluate the fit against your profile
 2. Ask if you want to proceed
 3. Draft a tailored CV and cover letter
 4. Have a reviewer agent critique the drafts
 5. Revise and present the final output
+
+Codex uses its available tools for the reviewer and document checks. If independent review, compilation, or rendered-PDF inspection is unavailable, it reports the missing check and leaves the application incomplete until that requirement is satisfied.
 
 ## 7. Compile your documents
 
