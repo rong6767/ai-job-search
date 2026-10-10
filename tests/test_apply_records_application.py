@@ -177,14 +177,15 @@ class ApplyRecordsApplication(unittest.TestCase):
         )
 
     def test_skill_defers_to_apply_rather_than_restating(self):
-        """/scrape Step 5 routes into the skill, bypassing /apply entirely."""
-        step_3b = section(SKILL, "### Step 3b: Record the Application")
+        """A full application uses the whole canonical pipeline, including recording."""
+        workflow = section(SKILL, "## Workflow")
         self.assertIn(
             "`/apply` Step 6b",
-            step_3b,
-            "the skill's recording step no longer points at the canonical rule, so "
-            "the two copies can drift",
+            workflow,
+            "the full application route must include the canonical recording step",
         )
+        self.assertIn(".claude/commands/apply.md` from Step 0", workflow)
+        self.assertNotIn("### Step 3b: Record the Application", SKILL.read_text(encoding="utf-8"))
 
 
 class DraftedMeansDraftedToEveryReader(unittest.TestCase):
@@ -224,7 +225,7 @@ class DraftedMeansDraftedToEveryReader(unittest.TestCase):
          "page bodies are write-once, so calling drafts 'submitted documents' "
          "is permanent even after /outcome records the real submission"),
         (SCRAPER, None, "do not add a second row",
-         "/scrape would duplicate the row Step 3b just wrote"),
+         "/scrape would duplicate the row /apply Step 6b just wrote"),
         (APPLY, "### Step 6b: Record the Application", "bare number, 0-100",
          "/upskill divides by fit_rating, so `72/100` or a verdict word breaks it"),
         (APPLY, "### Step 6b: Record the Application", "append a new row",
@@ -293,12 +294,9 @@ class ApplyArchivesThePosting(unittest.TestCase):
          "item 7's constraints, and would write a remembered posting instead"),
         (SKILL, "### Step 1: Research & Evaluate Fit",
          "full posting text verbatim",
-         "the /scrape path never runs /apply Step 0, so nothing stops it "
-         "compressing the posting before Step 3b archives it"),
-        (SKILL, "### Step 3b: Record the Application",
-         "same posting archive",
-         "the /scrape path reaches Step 3b without running /apply, and its "
-         "closed enumeration of Step 6b's rules would omit the archive write"),
+         "an evaluation-only request must retain the full text if the user later applies"),
+        (SKILL, "## Workflow", "tracker/posting archive",
+         "the full application pointer must retain the canonical archive step"),
         (OUTCOME, "## Step 3: Archive the Application Materials",
          "if it already exists, leave it",
          "/outcome would overwrite /apply's archived posting with a re-fetch, "
@@ -349,9 +347,8 @@ class DeadlineSurvivesEveryWrite(unittest.TestCase):
          "built on) must override the scraper's stored value"),
         (NOTION_SYNC, None, "tracker `deadline` column",
          "the Deadine property must name the tracker column as its source"),
-        (SKILL, "### Step 3b: Record the Application", "`deadline` is the application deadline",
-         "the /scrape path reaches Step 3b without running /apply Step 0, so it must "
-         "still be told what the field is and where it comes from"),
+        (SKILL, "## Workflow", ".claude/commands/apply.md` from Step 0",
+         "the full application route must execute canonical parsing and deadline extraction"),
         # The two properties the migration has to hold. Both are stated in the
         # prose of either file and neither was pinned, so either could be edited
         # away with a green suite - turning an agreed header-line append into a
@@ -509,9 +506,8 @@ class ArchiveNameIsOnePathComponent(unittest.TestCase):
          "`/` there sends the draft to a path lualatex never writes a PDF "
          "back to, and the Step 4 compile check fails on a phantom path"),
         (SKILL, "### Step 2: Tailor CV",
-         "by the **Subfolder naming** rule in `documents/README.md`",
-         "the /scrape path writes its documents before Step 3b consults /apply, "
-         "so /apply's filename rule cannot protect it"),
+         "**Subfolder naming** rule in `documents/README.md`",
+         "an individual CV request still needs the canonical safe filename derivation"),
         (GMAIL_SYNC, "## Step 2: Load State",
          "by the **Subfolder naming** rule in `documents/README.md`",
          "gmail-sync both locates and creates archives; its old spaces-only "

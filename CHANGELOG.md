@@ -13,7 +13,29 @@ per-file diff commands.
 
 ## [Unreleased]
 
+### Added
+
+- **Offline readiness checks** (`tools/doctor.py`) - scoped diagnostics for setup,
+  profiles, search, and applications, with actionable fixes and JSON output. The
+  canonical workflows check prerequisites before fetching or scoring. Optional
+  search tools retain the WebSearch fallback; custom templates retain their own
+  compile commands. The check neither changes profiles nor contacts services.
+
 ### Fixed
+
+- **Application entry points share the full `/apply` pipeline** - selecting a
+  scraped job or requesting a full application now uses the canonical reviewer,
+  template handling, PDF/ATS verification and application record. Scraping also
+  excludes an undeclared required language per the existing Language Gate, with
+  a visible reason rather than a misleading low fit score.
+- **Ranking rejects malformed scoring results before modifying a job**
+  (`tools/rank_state.py`) - invalid objects, scores, statuses and veto values
+  produce per-job errors while valid results can still be saved. Empty or wholly
+  invalid batches leave the state file untouched.
+- **CLI test subprocesses stay offline** - every portal's test helper loads its
+  own fetch guard and disables Bun's automatic dependency installation. Valid
+  argument tests on LinkedIn and Freehire now verify the guard instead of
+  querying live job portals; each skill remains independently portable.
 
 - **`/reset profile` now targets the headings the shipped skill files actually have**
   (`.claude/commands/reset.md` Step 3, `tests/test_reset_command.py`) - two of its Step 3

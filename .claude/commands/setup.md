@@ -8,6 +8,14 @@ There are three paths into setup. Step 0 picks the right one; all three converge
 
 ## Step 0: Welcome & Choose Path
 
+Run the local setup diagnostic from the repository root before collecting information:
+
+```bash
+python tools/doctor.py --scope setup
+```
+
+Use the available Python 3.10+ executable (`python3` or `py` where appropriate). This check is read-only and offline. Report any issues with the suggested fixes; it does not block onboarding, and unfilled profile fields are expected at this stage. Do not install tools or fill personal data as part of the diagnostic.
+
 If `$ARGUMENTS` contains `--section <name>`, skip directly to that section in Path C for an update-only flow. Do not run the path-selection prompt below.
 
 Otherwise, first check where this working copy would publish to — **before anything is

@@ -57,6 +57,7 @@ BANDS = ((75, "Strong Fit"), (60, "Good Fit"), (45, "Moderate Fit"), (30, "Weak 
 DEFAULT_LIMIT = 10
 URGENT_DAYS = 7
 ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+GATE_VERDICTS = ("PASS", "FAIL", "FLAG")
 
 
 def load_state(path: Path) -> tuple[dict, dict]:
@@ -65,11 +66,14 @@ def load_state(path: Path) -> tuple[dict, dict]:
         sys.exit(f"{path} not found - run /scrape first")
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        sys.exit(f"{path} is not valid JSON: {exc}")
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        sys.exit(f"cannot read state file {path}: {exc}")
     seen = doc.get("seen") if isinstance(doc, dict) and "seen" in doc else doc
     if not isinstance(seen, dict):
         sys.exit(f"{path}: expected an object of job entries")
+    for key, entry in seen.items():
+        if not isinstance(entry, dict):
+            sys.exit(f"{path}: job entry {key!r} must be an object")
     return doc, seen
 
 
@@ -238,6 +242,8 @@ def cmd_sweep(args) -> int:
 
 
 def overall_score(scores: dict) -> int:
+    if not isinstance(scores, dict):
+        raise ValueError("scores must be a JSON object")
     total = 0.0
     for dim, weight in WEIGHTS.items():
         value = scores.get(dim)
@@ -261,19 +267,30 @@ def cmd_apply(args) -> int:
     today = args.today
     try:
         results = json.loads(Path(args.results).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         sys.exit(f"cannot read results file {args.results}: {exc}")
     if isinstance(results, dict):
-        results = results.get("results", [])
+        results = results.get("results")
     if not isinstance(results, list):
         sys.exit("results file must be a JSON array of scoring objects")
 
     rows, expired, errors = [], [], []
-    for result in results:
+    applied = 0
+    for index, result in enumerate(results, start=1):
+        if not isinstance(result, dict):
+            errors.append({"key": None, "error": f"results[{index}] must be a JSON object"})
+            continue
         key = result.get("key")
+        if not isinstance(key, str) or not key.strip():
+            errors.append({"key": key, "error": "key must be a non-empty string"})
+            continue
         entry = seen.get(key)
         if entry is None:
             errors.append({"key": key, "error": "no such key in seen_jobs.json"})
+            continue
+
+        if result.get("status") not in ("scored", "expired"):
+            errors.append({"key": key, "error": "status must be 'scored' or 'expired'"})
             continue
 
         if result.get("status") == "expired":
@@ -281,23 +298,33 @@ def cmd_apply(args) -> int:
             expired.append(
                 {"key": key, "title": entry.get("title"), "company": entry.get("company"), "url": entry.get("url")}
             )
+            applied += 1
             continue
 
         try:
-            score = overall_score(result.get("scores") or {})
+            score = overall_score(result.get("scores"))
+            legacy = entry_location_verdict(entry)
+            verdicts = {}
+            for field, fallback in (("location_verdict", legacy), ("language_gate", None)):
+                value = result.get(field)
+                value = (fallback or "PASS") if value is None else value
+                if value not in GATE_VERDICTS:
+                    raise ValueError(f"{field} must be PASS, FAIL or FLAG")
+                verdicts[field] = value
         except ValueError as exc:
             errors.append({"key": key, "error": str(exc)})
             continue
 
-        legacy = entry_location_verdict(entry)
+        # Validate the entire result before touching this entry: an invalid
+        # gate must never persist a score or discard a legacy location value.
         if entry.get("location") in ("PASS", "FAIL", "FLAG"):
             entry.pop("location", None)  # legacy verdict, never a place
         entry["status"] = "ranked"
         entry["rank_score"] = score
         entry["rank_verdict"] = band(score)
         entry["rank_date"] = today.isoformat()
-        entry["location_verdict"] = result.get("location_verdict") or legacy or "PASS"
-        entry["language_gate"] = result.get("language_gate") or "PASS"
+        entry["location_verdict"] = verdicts["location_verdict"]
+        entry["language_gate"] = verdicts["language_gate"]
         if entry["language_gate"] == "PASS":
             entry.pop("language_note", None)
         else:
@@ -332,8 +359,10 @@ def cmd_apply(args) -> int:
                 "gaps": entry.get("gaps", []),
             }
         )
+        applied += 1
 
-    if not args.dry_run:
+    written = bool(applied and not args.dry_run)
+    if written:
         save_state(args.state, doc)
 
     rows.sort(key=lambda r: (r["score"], r["urgent"]), reverse=True)
@@ -347,7 +376,7 @@ def cmd_apply(args) -> int:
                 "vetoed": vetoed,
                 "expired": expired,
                 "errors": errors,
-                "written": not args.dry_run,
+                "written": written,
             },
             indent=2,
             ensure_ascii=False,

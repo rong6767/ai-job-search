@@ -30,7 +30,9 @@ describe("LinkedIn CLI flag validation", () => {
     test("valid integer passes validation", async () => {
       const result = await runCLI(["search", "-l", LOCATION, "--jobage", "7", "--limit", "1"]);
       const err = parsedStderr(result.stderr);
-      expect(err.code).not.toBe("BAD_ARG");
+      expect(result.exitCode).toBe(1);
+      expect(err.code).toBe("SEARCH_FAILED");
+      expect(err.error).toContain("OFFLINE_TEST_NETWORK_BLOCKED");
     });
 
     // Fractional values must be rejected, not truncated: parseInt("0.5") is 0,
@@ -131,7 +133,9 @@ describe("LinkedIn CLI flag validation", () => {
         "search", "-l", LOCATION, "--jobage", "7", "--page", "1", "--limit", "5",
       ]);
       const err = parsedStderr(result.stderr);
-      expect(err.code).not.toBe("BAD_ARG");
+      expect(result.exitCode).toBe(1);
+      expect(err.code).toBe("SEARCH_FAILED");
+      expect(err.error).toContain("OFFLINE_TEST_NETWORK_BLOCKED");
     });
   });
 });

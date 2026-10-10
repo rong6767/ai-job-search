@@ -42,7 +42,16 @@ python3 tools/rank_state.py sweep --write
 
 Skip profile loading and Steps 2-4 on this path: no jobs need fetching or scoring. Present a sweep-only Step 5 summary: say "Nothing new to rank", report `swept` and `newly_expired`, list `closing_soon` with deadlines and posting URLs, and report any `unparseable_deadlines` with their portals. Apply rule 6's same reporting and defensive-date rules. Then suggest `/scrape` for fresh postings and stop. An empty candidate batch, including one caused by a focus filter or tracker exclusion, never skips this sweep.
 
+For a non-empty candidate batch, run the read-only, offline profile check from the repository root:
+
+```bash
+python tools/doctor.py --scope profile
+```
+
+Use the available Python 3.10+ executable (`python3` or `py` where appropriate). If it exits with code 1, stop before fetching or scoring and present the reported fixes, pointing missing or placeholder candidate information to `/setup`. Warnings alone do not stop ranking. The empty-candidate sweep above needs no completed profile and must still run.
+
 Then read the scoring framework and profile **once**:
+
 - `.claude/skills/job-application-assistant/04-job-evaluation.md`
 - `.claude/skills/job-application-assistant/01-candidate-profile.md`
 

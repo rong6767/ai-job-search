@@ -5,7 +5,7 @@ description: >
   (LinkedIn, local job boards, and any skills added with /add-portal). Deduplicates
   across runs. Triggers on: job scrape, find jobs, search jobs, new jobs, job search,
   scrape jobs, /scrape
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(bun run .agents/skills/*/cli/src/cli.ts *), Bash(python tools/job_key.py:*), Bash(python3 tools/job_key.py:*), WebFetch, WebSearch, Agent, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(bun run .agents/skills/*/cli/src/cli.ts *), Bash(python tools/job_key.py:*), Bash(python3 tools/job_key.py:*), Bash(python tools/doctor.py:*), Bash(python3 tools/doctor.py:*), WebFetch, WebSearch, Agent, AskUserQuestion
 ---
 
 # Job Scraper
@@ -37,6 +37,16 @@ Optional arguments:
 ## Execution Steps
 
 ### Step 0: Load State
+
+Before creating state or searching, run the read-only, offline diagnostic from the repository root:
+
+```bash
+python tools/doctor.py --scope search
+```
+
+Use the available Python 3.10+ executable (`python3` or `py` where appropriate). If it exits with code 1, stop and present the reported issues and fixes; missing or placeholder profile/search information should be completed through `/setup`. Warnings alone do not stop the workflow; a Bun warning can still use Step 1c's WebSearch fallback.
+
+For `/scrape health`, use `--scope setup` instead: portal diagnosis needs no completed candidate profile. Skip the state creation and reads below and proceed to Step 4.75's probe-only mode.
 
 1. Read `job_scraper/seen_jobs.json` (create if missing - start with `{"seen": {}}`)
 2. Read `job_search_tracker.csv` to extract already-applied companies+roles
@@ -137,7 +147,7 @@ For each new job, do a rapid fit check (NOT the full evaluation from `04-job-eva
 - **Medium match**: Role is adjacent to your experience
 - **Low match**: Role requires significant skills you lack
 
-**Language override:** before assigning a match level, check the posting against `04-job-evaluation.md`'s Language Gate (a required language you haven't declared at all in your CLAUDE.md Languages table). A required language that's entirely undeclared overrides skill fit: mark it **Low** regardless of how well the skills align, and name it in the highlight bullets so it isn't buried under an otherwise-good-looking match. A **declared** language at a requirement that reads higher than your declared level is *not* an override — score fit normally, but add a red-flag bullet under that job's highlights (Step 5) quoting the posting's requirement next to your declared level, so the gap is visible without being auto-downgraded.
+**Language Gate:** before assigning a match level, apply `04-job-evaluation.md`'s Language Gate. A required language that's entirely undeclared is **FAIL**: do not score or include the job in the matches table. Store it in Step 4 as `status: "skipped"`, `fit: null`, `language_gate: "FAIL"` and `language_note` quoting the requirement; list it separately under Step 5's **Excluded** with the reason and posting URL. A **declared** language at a requirement that reads higher than your declared level is **FLAG**: assess fit normally, persist `language_gate` and `language_note`, and show the quoted requirement next to the declared level in Step 5. Check role requirements, never reject solely because of the ad's language.
 
 ### Step 4: Deduplicate & Store
 
@@ -160,8 +170,10 @@ It prints one line: the canonical key for that posting. The key must be a pure f
       "first_seen": "YYYY-MM-DD",
       "posted_date": "YYYY-MM-DD" | null,
       "deadline": "YYYY-MM-DD" | null,
-      "fit": "high/medium/low",
+      "fit": "high/medium/low" | null,
       "status": "new/skipped/ranked/expired",
+      "language_gate": "PASS/FAIL/FLAG",
+      "language_note": "<quoted requirement and declared level, only for FAIL/FLAG>",
       "portal": "<source portal skill, e.g. jobindex-search>",
       "source": "cli/websearch"
     }
@@ -173,14 +185,16 @@ The `portal` field records which CLI skill produced the job (results are already
 
 The `source` field records which mechanism produced the entry: `cli` for Step 1b portal-CLI output, `websearch` for the Step 1c fallback. This is what keeps a ghost-job report diagnosable after the run's summary is gone: a stored entry whose URL later resolves to nothing (or to a different job) reads very differently depending on whether it came from live CLI output or from a search index that can be weeks stale - and a presented job with no entry here at all points at fabrication, which Rule 1 forbids. Entries written before this field existed lack it; never backfill it - the mechanism was not recorded.
 
-`/rank` extends this schema additively: ranked entries also carry `rank_score` (0–100 overall score), `rank_verdict` (fit band, e.g. "strong fit"), `rank_date` (ISO date of ranking), the veto fields `location_verdict` and `language_gate` (both PASS/FAIL/FLAG) with `language_note` (the quoted requirement explaining a non-PASS), and `strengths`/`gaps` (1-3 verbatim bullets each, copied from the scoring agent's findings). The `status` field is set to `"ranked"`. Do not drop any of these fields when re-writing entries. Entries ranked before `strengths`/`gaps` existed simply lack them; readers tolerate their absence and never backfill by guessing. Entries ranked before the verdict rename may carry a legacy PASS/FAIL/FLAG string in `location` - read that as the verdict when `location_verdict` is absent; in fresh entries `location` is always a place, never a verdict.
+`language_gate` and `language_note` preserve Step 3's verdict; omit `language_note` for PASS. A language FAIL has no fit score (`fit: null`), and its skipped status prevents it from entering the default `/rank` batch. Older entries may lack these fields; never backfill a language verdict by guessing.
+
+`/rank` extends this schema additively: ranked entries also carry `rank_score` (0–100 overall score), `rank_verdict` (fit band, e.g. "strong fit"), `rank_date` (ISO date of ranking), the veto field `location_verdict` and refreshed `language_gate` (both PASS/FAIL/FLAG) with `language_note` (the quoted requirement explaining a non-PASS), and `strengths`/`gaps` (1-3 verbatim bullets each, copied from the scoring agent's findings). The `status` field is set to `"ranked"`. Do not drop any of these fields when re-writing entries. Entries ranked before `strengths`/`gaps` existed simply lack them; readers tolerate their absence and never backfill by guessing. Entries ranked before the verdict rename may carry a legacy PASS/FAIL/FLAG string in `location` - read that as the verdict when `location_verdict` is absent; in fresh entries `location` is always a place, never a verdict.
 
 `deadline` is a base field rather than a `/rank` extension: Step 2's detail fetch already extracts the application deadline, so it is written when the job is first seen and refreshed by `/rank` Step 4 when a scoring agent returns a different value. `null` means the posting states no deadline; a missing key means the entry predates this field - **never infer a deadline** from either, and never backfill by guessing.
 
 `posted_date` is the posting's own publication date, taken from the `date` field Step 2's contract already guarantees on every portal CLI's search output. Step 1b uses that date to scope the run to the last 14 days and then drops it, so nothing downstream can distinguish a posting published yesterday from one published two years ago - `first_seen` is when this scraper first saw the entry, not when the employer posted it. Persisting it makes Step 1b's window auditable after the run and gives `/rank` a freshness signal to weigh, instead of rediscovering the date and recording it in prose that nothing reads. That gap landed for real: a freehire-search posting dated 2024-05-13 was scraped and ranked Strong Fit at position 1 of 133, its own scoring note observing the listing "may be long stale" with nothing able to act on it. `null` means the portal returned no date for that result (the CLIs emit `date: null` when a listing omits it); a missing key means the entry predates this field - **never infer a posting date** from either, and never backfill by guessing.
 
-3. Only present jobs NOT already in the seen list (matched by URL or
-   company+title) or tracker.
+3. Only present matches NOT already in the seen list (matched by URL or
+   company+title) or tracker, and which did not fail the Language Gate.
 
 ### Step 4.5: Generate Referral Contact Links (High & Medium Fit Only)
 
@@ -261,6 +275,9 @@ For each high-match job, add 2-3 bullet points:
 - Key requirements to check
 - Any red flags (including mass-posting signals from Step 2.5)
 
+### Excluded
+For each new job that failed the Language Gate, show its title, company, quoted requirement, exclusion reason, and posting URL. Keep these outside the match counts and matches table.
+
 ### Contacts
 For each high/medium-fit job from Step 4.5, add a short contacts block with the two
 LinkedIn search links:
@@ -271,13 +288,13 @@ LinkedIn search links:
 After presenting, ask:
 > "Want me to evaluate any of these in detail? Just give me the number(s)."
 
-If the user picks a number, invoke the **job-application-assistant** skill workflow (fit evaluation first, then CV + cover letter if approved).
+If the user picks a number, read and execute the canonical **`/apply` workflow** in `.claude/commands/apply.md` from Step 0 with that posting's URL or full text. Re-evaluate fit, then draft if approved; its reviewer, active-template handling, compile/PDF/ATS verification, and tracker recording must all run. A quick scrape fit rating never replaces the full evaluation.
 
 If the run found many new jobs (roughly 8+), also suggest `/rank` - it batch-scores all new postings against the full fit framework and returns a ranked shortlist, which beats eyeballing a long table. (`/rank` sets the `ranked` and `expired` status values in `seen_jobs.json`; treat both as already-seen for dedup purposes.)
 
 ### Step 6: Update Tracker (Optional)
 
-If the user decides to apply to any job, the tracker row is written by **job-application-assistant Step 3b**, which Step 5 already routes into - do not add a second row here. Only when the user says they applied to something outside that path, add a row using the header and the match-then-update rule in `/outcome` Step 1.
+If the user decides to apply to any job, the tracker row is written by **`/apply` Step 6b**, which Step 5 already routes into - do not add a second row here. Only when the user says they applied to something outside that path, add a row using the header and the match-then-update rule in `/outcome` Step 1.
 
 ---
 

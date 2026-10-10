@@ -20,6 +20,14 @@ This rule is the input side of the Step 3 Factual Grounding Audit, not a competi
 
 ## Step 0: Parse Input
 
+Before fetching the posting or drafting, run this read-only, offline check from the repository root:
+
+```bash
+python tools/doctor.py --scope apply
+```
+
+Use the available Python 3.10+ executable (`python3` or `py` where appropriate). If it exits with code 1, stop and present the reported issues and fixes; missing or placeholder candidate information should be completed through `/setup`. Warnings alone do not stop the workflow. This check honors active custom templates, so follow their declared compile commands rather than requiring the stock LaTeX engines.
+
 - If `$ARGUMENTS` looks like a URL, use `WebFetch` to retrieve the job posting content.
 - **If the fetch returns HTTP 403, or the content is a login wall or an unrelated listing page, do not give up and do not draft from the title.** Follow the escalation order in `.claude/skills/job-application-assistant/09-web-research.md`: retry with browser headers via curl, then search for the employer's own careers posting. Most corporate and bank sites reject WebFetch's user agent while serving the page normally to a browser.
 - **Prefer the employer's own careers posting over an aggregator listing** (LinkedIn, Indeed, or your market's equivalent). Aggregators routinely drop the requisition ID and the grade or seniority level, and the grade is often the single most decision-relevant fact in the posting. Surface any material discrepancy between the two versions to the user.

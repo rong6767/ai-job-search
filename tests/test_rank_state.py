@@ -492,6 +492,124 @@ class Apply(RankStateCase):
                     self.assertEqual([row["key"] for row in out["ranked"]], ["b"])
                     self.assertEqual(self.read_state()["b"]["rank_score"], 80)
 
+    def test_non_object_results_do_not_abort_valid_rows(self):
+        self.write_state({"a": entry()})
+        out = self.run_tool("apply", "--results", self.results([
+            None, "bad result", 42, [],
+            {"key": "a", "status": "scored", "scores": dict.fromkeys(
+                ("technical", "experience", "behavioral", "career"), 80)},
+        ]), expect=1)
+        self.assertEqual(len(out["errors"]), 4)
+        self.assertTrue(all("JSON object" in error["error"] for error in out["errors"]))
+        self.assertEqual(self.read_state()["a"]["rank_score"], 80)
+        self.assertTrue(out["written"])
+
+    def test_invalid_keys_are_errors_instead_of_unhashable_key_crashes(self):
+        original = entry()
+        self.write_state({"a": original})
+        before = self.state.read_bytes()
+        invalid_keys = (None, "", " ", [], {}, 12, True)
+        out = self.run_tool("apply", "--results", self.results([
+            {"key": key, "status": "expired"} for key in invalid_keys
+        ]), expect=1)
+        self.assertEqual(len(out["errors"]), len(invalid_keys))
+        self.assertTrue(all("key must be" in error["error"] for error in out["errors"]))
+        self.assertFalse(out["written"])
+        self.assertEqual(self.state.read_bytes(), before)
+
+    def test_non_object_scores_are_rejected_per_row(self):
+        invalid_scores = (None, [], [50], "50", 50, True)
+        originals = {f"bad{i}": entry(status="ranked", rank_score=70)
+                     for i in range(len(invalid_scores))}
+        self.write_state({**originals, "good": entry()})
+        out = self.run_tool("apply", "--results", self.results([
+            {"key": f"bad{i}", "status": "scored", "scores": scores}
+            for i, scores in enumerate(invalid_scores)
+        ] + [{"key": "good", "status": "scored", "scores": dict.fromkeys(
+            ("technical", "experience", "behavioral", "career"), 80)}]), expect=1)
+        self.assertEqual(len(out["errors"]), len(invalid_scores))
+        self.assertTrue(all("scores must be" in error["error"] for error in out["errors"]))
+        stored = self.read_state()
+        for key, original in originals.items():
+            self.assertEqual(stored[key], original)
+        self.assertEqual([row["key"] for row in out["ranked"]], ["good"])
+
+    def test_invalid_status_does_not_silently_rank_the_entry(self):
+        statuses = (None, "", "unknown", "ranked", [], {})
+        originals = {f"bad{i}": entry() for i in range(len(statuses))}
+        self.write_state(originals)
+        before = self.state.read_bytes()
+        out = self.run_tool("apply", "--results", self.results([
+            {"key": f"bad{i}", "status": status, "scores": dict.fromkeys(
+                ("technical", "experience", "behavioral", "career"), 90)}
+            for i, status in enumerate(statuses)
+        ]), expect=1)
+        self.assertEqual(len(out["errors"]), len(statuses))
+        self.assertTrue(all("status must be" in error["error"] for error in out["errors"]))
+        self.assertEqual(out["ranked"], [])
+        self.assertFalse(out["written"])
+        self.assertEqual(self.state.read_bytes(), before)
+
+    def test_invalid_veto_values_never_persist_a_score_or_drop_legacy_location(self):
+        invalid_values = ("fail", "UNKNOWN", "", True, 1, [], {})
+        originals, payload = {}, []
+        for field in ("location_verdict", "language_gate"):
+            for i, value in enumerate(invalid_values):
+                key = f"{field}{i}"
+                originals[key] = entry(location="FLAG", rank_score=70, strengths=["keep"])
+                payload.append({
+                    "key": key, "status": "scored", field: value,
+                    "scores": dict.fromkeys(("technical", "experience", "behavioral", "career"), 90),
+                })
+        self.write_state(originals)
+        before = self.state.read_bytes()
+        out = self.run_tool("apply", "--results", self.results(payload), expect=1)
+        self.assertEqual(len(out["errors"]), len(payload))
+        self.assertTrue(all("must be PASS, FAIL or FLAG" in error["error"]
+                            for error in out["errors"]))
+        self.assertEqual(out["ranked"], [])
+        self.assertEqual(out["vetoed"], [])
+        self.assertFalse(out["written"])
+        self.assertEqual(self.state.read_bytes(), before)
+
+    def test_empty_results_do_not_rewrite_state(self):
+        self.write_state({"a": entry()})
+        before = self.state.read_bytes()
+        out = self.run_tool("apply", "--results", self.results([]))
+        self.assertFalse(out["written"])
+        self.assertEqual(self.state.read_bytes(), before)
+
+    def test_results_wrapper_requires_an_array(self):
+        self.write_state({"a": entry()})
+        before = self.state.read_bytes()
+        for payload in ({}, {"results": None}, {"results": {}}, 12):
+            with self.subTest(payload=payload):
+                proc = subprocess.run(
+                    [sys.executable, str(TOOL), "apply", "--results", self.results(payload),
+                     "--state", str(self.state), "--today", TODAY],
+                    capture_output=True, text=True, encoding="utf-8",
+                )
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn("JSON array", proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+                self.assertEqual(self.state.read_bytes(), before)
+
+    def test_non_object_state_entries_fail_without_rewriting_state(self):
+        for value in (None, [], 12):
+            with self.subTest(entry=value):
+                self.write_state({"a": value})
+                before = self.state.read_bytes()
+                proc = subprocess.run(
+                    [sys.executable, str(TOOL), "apply", "--results",
+                     self.results([{"key": "a", "status": "expired"}]),
+                     "--state", str(self.state), "--today", TODAY],
+                    capture_output=True, text=True, encoding="utf-8",
+                )
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn("job entry 'a' must be an object", proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+                self.assertEqual(self.state.read_bytes(), before)
+
     def test_score_boundaries_and_fractional_scores_remain_valid(self):
         for value, expected in ((0, 0), (100, 100), (72.5, 73)):
             with self.subTest(value=value):

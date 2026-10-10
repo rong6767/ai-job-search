@@ -4,8 +4,8 @@ description: >
   Assists with job applications: evaluating job postings, tailoring CVs, writing cover letters,
   and preparing for interviews. Triggers on keywords like: job posting, job application, CV,
   cover letter, resume, interview prep, job fit, career, application, apply, ansøgning, stilling
-allowed-tools: Read, Glob, Grep, WebFetch, WebSearch, Bash, Edit, Write, AskUserQuestion
-framework_version: 1.3.4
+allowed-tools: Read, Glob, Grep, WebFetch, WebSearch, Bash, Edit, Write, Agent, AskUserQuestion
+framework_version: 1.3.5
 ---
 
 # Job Application Assistant
@@ -14,41 +14,30 @@ framework_version: 1.3.4
 
 ## Workflow
 
-When the user provides a job posting (URL or text), follow this workflow:
+For a full job application, read and execute **`.claude/commands/apply.md` from Step 0**, passing the user's posting URL or full pasted text as its input. This is the canonical application workflow, including readiness checks, fit evaluation and approval, active templates, the reviewer, compiled PDF inspection, ATS checks, and `/apply` Step 6b's tracker/posting archive. Follow it rather than running a separate drafting pipeline here.
+
+The same rule applies when the user selects a result from `/scrape`. Keep the full posting text verbatim for the canonical archive; a quick scrape rating does not replace `/apply`'s evaluation. Reuse an approval already given for this application rather than asking for it again.
+
+## Individual Requests
+
+When the user explicitly asks for only one artifact or one step, use the corresponding references below. Do not create an application tracker row for a CV or cover letter drafted alone. If the request becomes a full application, return to the canonical `/apply` workflow.
 
 ### Step 1: Research & Evaluate Fit
-- Fetch the job posting content (use WebFetch for URLs). **A 403 is not a dead end** - follow the escalation order in `09-web-research.md` before concluding a page is unavailable, and prefer the employer's own careers posting over an aggregator listing
-- Keep the **full posting text verbatim** for Step 3b to archive - never a summary
-- Analyze the posting for required competencies, keywords, and priorities
-- Research the company (website, LinkedIn, mission, recent news), per `09-web-research.md`
-- Score the posting against the candidate's profile using the framework in `04-job-evaluation.md`
-- Present the evaluation table and verdict
-- Suggest whether the candidate should call the employer before applying (see `04-job-evaluation.md` for guidance)
-- Ask the user if they want to proceed with an application
+- Run the read-only profile diagnostic (`python tools/doctor.py --scope profile`, using the available Python executable) before fetching or scoring. Resolve errors through `/setup`; warnings alone do not block evaluation.
+- Fetch and research per `09-web-research.md`, retaining the **full posting text verbatim** if the user later proceeds.
+- Evaluate with `04-job-evaluation.md`, including its eligibility and language gates, and present the assessment. Stop after evaluation unless the user requests drafting.
 
 ### Step 2: Tailor CV
-- Before writing either document, derive `<company>_<role>` once by the **Subfolder naming** rule in `documents/README.md`; reuse that exact value for the CV, cover letter, and Step 3b archive path. If the rule says to stop because the derived name is empty, stop before creating any file.
-- Read the most relevant existing CV variant from `cv/` as a starting point
-- Follow the guidelines in `05-cv-templates.md`
-- Create `cv/main_<company>_<role>.tex` with tailored content
-- Adjust: profile statement, skills section, experience bullet emphasis, section order
+- Follow `05-cv-templates.md` and `/apply` Step 2's CV guidance for factual grounding, filename derivation, and active-template handling; the **Subfolder naming** rule in `documents/README.md` applies before writing.
+- Run the profile diagnostic from Step 1 above and check the CV template's compiler before writing. Follow `/apply` Step 5's compile, visual inspection and ATS checks for the CV before presenting it. Use the active template's extension and declared command.
 
 ### Step 3: Write Cover Letter
-- Follow the writing style rules in `03-writing-style.md` (critical: no em-dashes, no cliches)
-- Follow the template structure in `06-cover-letter-templates.md`
-- Create `cover_letters/cover_<company>_<role>.tex`
-- Ensure the letter connects specific experience to the role requirements
-
-### Step 3b: Record the Application
-- Run this once both documents exist. A CV or cover letter drafted alone is not yet an application.
-- Follow **`/apply` Step 6b** (`.claude/commands/apply.md`) exactly: same header, same match-then-update rule, same `drafted` row, same posting archive, same prohibition on touching `job_scraper/seen_jobs.json`. It is stated there once so the two paths cannot drift. Four of its values are named in `/apply`'s own terms: `cv_file`/`cover_letter_file` are the paths written in Steps 2 and 3 here, `source` is the posting URL from Step 1, `deadline` is the application deadline from the posting text Step 1 keeps verbatim (empty when the posting states none - never guess one), and the posting text item 7 archives is the one Step 1 read.
-- This step exists here because `/scrape` Step 5 routes straight into this skill. Without it, that path writes two documents and records nothing.
+- Follow `03-writing-style.md`, `06-cover-letter-templates.md`, and `/apply` Step 2's cover-letter guidance for factual grounding, filename derivation and active-template handling.
+- Run the profile diagnostic from Step 1 above and check the cover-letter template's compiler before writing. Follow `/apply` Step 5's compile and visual inspection for the cover letter before presenting it. Use the active template's extension and declared command.
 
 ### Step 4: Interview Preparation
-- Follow the framework in `07-interview-prep.md`
-- Prepare STAR-format answers for likely questions
-- Identify role-specific talking points
-- Draft questions the candidate should ask the interviewer
+- For a tracked application, read and execute `.claude/commands/interview.md` so preparation uses the submitted materials and interview history.
+- For general interview practice, follow `07-interview-prep.md` using verified profile facts.
 
 ---
 

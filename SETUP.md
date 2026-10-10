@@ -16,7 +16,7 @@ You'll need an Anthropic API key or a Claude Pro/Team subscription. See the [Cla
 
 ### Python
 
-Python 3.10+ is required for the salary lookup tool. Check with:
+Python 3.10+ is required for local diagnostics, ranking state, PDF verification, and the optional salary lookup tool. Check with:
 
 ```bash
 python3 --version
@@ -172,7 +172,7 @@ Or manually: fork on GitHub, then clone your fork.
 > under your GitHub identity, on a repo where you cannot delete it (#389).
 
 > **Before you go further: forks are public.** GitHub cannot make a fork of a public
-> repository private, and `/setup` (section 6) writes your personal data into **tracked**
+> repository private, and `/setup` (section 4) writes your personal data into **tracked**
 > files — pushing those commits to a fork publishes them. If this copy is for your own
 > job search rather than for contributing, prefer a **private repository** with this repo
 > as `upstream`: see section 8, step 1 for the exact commands and why committing your
@@ -225,6 +225,28 @@ Claude will offer three paths:
 - **Path C (interview mode):** Answer structured interview questions section by section.
 
 All three paths produce the same result: fully populated profile files.
+
+If you use another agent, start with `AGENTS.md`, then ask it to read and follow `.claude/commands/setup.md`. The canonical command files describe the workflow; other agents may need their own equivalents for Claude's tool names and slash-command registration. For search, use `.claude/skills/job-scraper/SKILL.md`.
+
+### Local readiness check
+
+From the repository root, run:
+
+```bash
+python tools/doctor.py --scope all
+```
+
+The check reads local files and installed-tool availability, without network requests, installs, or personal-data writes. It reports actionable issues and exits with code 1 for errors, or code 0 when only warnings remain. `--format json` produces structured output; `--root <path>` checks another workspace.
+
+- `--scope setup`: basic Python and canonical-file checks. Unfilled profile fields are expected before onboarding.
+- `--scope profile`: candidate fields needed for fit evaluation and ranking.
+- `--scope search`: profile, search configuration, Bun, and runtime dependencies for enabled portal CLIs. Disabled portals do not need dependencies; missing Bun or CLI dependencies produce warnings so the workflow can use its WebSearch fallback.
+- `--scope apply`: profile and document tools. Stock templates need `lualatex` and `xelatex`; active custom templates require checking their declared compile commands. Missing optional PDF extractors produce warnings.
+- `--scope all`: all of the above.
+
+`/scrape`, `/rank` and `/apply` run their relevant check before fetching or scoring; a profile error points back to `/setup`. `/setup` and `/scrape health` do not require a completed profile. Query-template warnings can be resolved with `/setup --section search`, or the agent can build queries from an explicit search focus and the initialized profile.
+
+Passing this check confirms local prerequisites only. Portal connectivity, parsing health, TeX package availability and actual document compilation still need the existing `/scrape health` and compile/inspect steps. Use `python3` or `py` if that is the Python executable available on your system.
 
 ### What gets populated
 

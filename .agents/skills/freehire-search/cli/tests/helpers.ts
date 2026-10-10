@@ -1,6 +1,7 @@
 import { join } from "path";
 
 const CLI_PATH = join(import.meta.dir, "../src/cli.ts");
+const OFFLINE_PRELOAD = join(import.meta.dir, "offline-preload.ts");
 
 export interface CLIResult {
   stdout: string;
@@ -9,7 +10,7 @@ export interface CLIResult {
 }
 
 export async function runCLI(args: string[], env: Record<string, string> = {}): Promise<CLIResult> {
-  const proc = Bun.spawn(["bun", "run", CLI_PATH, ...args], {
+  const proc = Bun.spawn(["bun", "--no-install", "--preload", OFFLINE_PRELOAD, CLI_PATH, ...args], {
     stdout: "pipe",
     stderr: "pipe",
     env: { ...process.env, ...env },
